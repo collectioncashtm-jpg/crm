@@ -30,9 +30,18 @@ export default function Settings() {
   }
 
   const handleClear = async () => {
-    if (!confirm('Clear all data? This cannot be undone.')) return
-    toast.success('Data cleared! (Demo mode)')
+  if (!confirm('Clear ALL data from database? This cannot be undone.')) return
+  try {
+    await api.delete('/customers/all')
+    await api.delete('/emi/all')
+    await api.delete('/payments/all')
+    await api.delete('/tasks/all')
+    toast.success('All data cleared successfully!')
+    window.location.reload()
+  } catch (err) {
+    toast.error('Failed to clear data')
   }
+}
 
   return (
     <div className="space-y-6">

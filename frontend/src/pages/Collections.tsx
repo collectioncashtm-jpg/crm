@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import api from '@/lib/api'
 

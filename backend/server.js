@@ -1,70 +1,105 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
-
-const { initDB } = require('./db');
+const express = require("express");
+const cors = require("cors");
+const { createClient } = require("@libsql/client");
 
 const app = express();
 
-app.use(helmet());
-app.use(compression());
+app.use(cors());
+app.use(express.json());
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
-  validate: { xForwardedForHeader: false }
-});
-app.use(limiter);
-
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true
-}));
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(morgan('dev'));
-
-// Routes
-app.use('/api/customers', require('./routes/customers'));
-app.use('/api/emi', require('./routes/emi'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/tasks', require('./routes/tasks'));
-app.use('/api/topup', require('./routes/topup'));
-app.use('/api/moratorium', require('./routes/moratorium'));
-app.use('/api/collections', require('./routes/collections'));
-app.use('/api/dashboard', require('./routes/dashboard'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/upload', require('./routes/upload'));
-app.use('/api/loans', require('./routes/loans'));
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '3.0.0', db: 'turso' });
+// ✅ Turso DB connection
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({ success: false, message: err.message || 'Internal Server Error' });
+// ✅ Health check route (DB test)
+app.get("/", async (req, res) => {
+  try {
+    const result = await client.execute("SELECT 1 AS ok");
+
+    res.json({
+      success: true,
+      message: "Server + DB connected ✅",
+      db: result.rows,
+    });
+  } catch (err) {
+    console.error("DB Error ❌", err);
+
+    res.status(500).json({
+      success: false,
+      message: "DB connection failed",
+      error: err.message,
+    });
+  }
 });
 
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: 'Route not found' });
+// ✅ Example: get customers
+app.get("/customers", async (req, res) => {
+  try {
+    const result = await client.execute("SELECT * FROM customers");
+
+    res.json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
 });
 
-const PORT = process.env.PORT || 5000;
+// ✅ Example: add customer
+app.post("/customers", async (req, res) => {
+  try {
+    const {
+      id,
+      name,
+      panCard,
+      phoneNo,
+      accNo,
+      disbursedDate,
+      disbursedAmt,
+      overdue,
+      status,
+    } = req.body;
 
-initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 API available at http://localhost:${PORT}/api`);
-  });
-}).catch(err => {
-  console.error('❌ DB init error:', err.message);
-  process.exit(1);
+    await client.execute({
+      sql: `
+        INSERT INTO customers 
+        (id, name, panCard, phoneNo, accNo, disbursedDate, disbursedAmt, overdue, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        id,
+        name,
+        panCard,
+        phoneNo,
+        accNo,
+        disbursedDate,
+        disbursedAmt,
+        overdue,
+        status,
+      ],
+    });
+
+    res.json({
+      success: true,
+      message: "Customer added ✅",
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
 });
 
-module.exports = app;
+// ✅ Port binding (IMPORTANT for Render)
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
